@@ -85,9 +85,9 @@ bash fork/tools/release.sh --dry-run   # 只看会打什么 tag
 
 | 项 | 格式 | 例 |
 | --- | --- | --- |
-| tag | `v<官方版本>-fork.<YYYYMMDD>.<当日序号>` | `v1.24.0-fork.20251120.1` |
-| package.json version（CI 临时改，不提交） | `<官方版本>-fork.<YYYYMMDD>.<当日序号>` | `1.24.0-fork.20251120.1` |
-| 安装包文件名 | `orca-imboss-fork-<version>.exe` | `orca-imboss-fork-1.24.0-fork.20251120.1.exe` |
+| tag | `v<官方版本>-fork.<YYYYMMDD>.<当日序号>` | `v1.24.0-fork.20261119.1` |
+| package.json version（CI 临时改，不提交） | `<官方版本>-fork.<YYYYMMDD>.<当日序号>` | `1.24.0-fork.20261119.1` |
+| 安装包文件名 | `orca-imboss-fork-<version>.exe` | `orca-imboss-fork-1.24.0-fork.20261119.1.exe` |
 
 为什么必须长这样（源码依据，方案文档 7.2 节有完整推导）：
 
@@ -103,7 +103,7 @@ bash fork/tools/release.sh --dry-run   # 只看会打什么 tag
      `latest.yml`（`GitHubProvider.getLatestVersion` 的 fallback 分支），功能正常，
      代价是每次检查多一个 404 请求。想消掉它就把 `publish.channel` 设成 `fork`，
      但那样**版本号必须永远带 `-fork.` 后缀**，否则客户端会去找 `latest.yml` 而找不到。当前选择「不设 channel」，容错更大。
-3. **日期 + 序号保证单调递增**：`1.24.0-fork.20251120.1 < 1.24.0-fork.20251120.2 < 1.24.0-fork.20251121.1`（semver：先比 base，再逐段比预发布标识，数字段按数值比）。
+3. **日期 + 序号保证单调递增**：`1.24.0-fork.20261119.1 < 1.24.0-fork.20261119.2 < 1.24.0-fork.20261120.1`（semver：先比 base，再逐段比预发布标识，数字段按数值比）。
 4. **GitHub Release 不用勾 pre-release**：模板里 `releaseType: release`
    （`electron-publish/out/gitHubPublisher.js`：`prerelease: this.releaseType === "prerelease"`）。
    这样 GitHub 页面是正式 release，provider 不用担心被过滤。
@@ -113,7 +113,7 @@ bash fork/tools/release.sh --dry-run   # 只看会打什么 tag
 已知约束（重要）：
 
 - 基础版本号决定「跨天」的先后：**不要用旧 base 发比已装版本更新的日期**，
-  比如已装 `1.25.0-fork.20251121.1`，再用 base 1.24.0 发 `1.24.0-fork.20251125.1` —— semver 更小，不会被当成升级。
+  比如已装 `1.25.0-fork.20261120.1`，再用 base 1.24.0 发 `1.24.0-fork.20251125.1` —— semver 更小，不会被当成升级。
 - `1.24.0-fork.x < 1.24.0`：fork 版本在 semver 上低于同号官方版。所以官方安装包
   **不能**装到同一台机器上当升级（也会因为 appId/产品名不同而并存，见第 7 节）。
 

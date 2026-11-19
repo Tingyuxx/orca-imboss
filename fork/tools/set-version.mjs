@@ -13,8 +13,8 @@
  * 所以 tag 与 version 天然不会脱钩；不要在版本号里带 `v`。
  *
  * 用法：
- *   node fork/tools/set-version.mjs --from-tag v1.24.0-fork.20251120.1 --strict-base
- *   node fork/tools/set-version.mjs 1.24.0-fork.20251120.1
+ *   node fork/tools/set-version.mjs --from-tag v1.24.0-fork.20261119.1 --strict-base
+ *   node fork/tools/set-version.mjs 1.24.0-fork.20261119.1
  *   node fork/tools/set-version.mjs --from-tag <tag> --check   # 只校验，不写文件
  */
 import { readFileSync, writeFileSync } from "node:fs";
@@ -41,7 +41,7 @@ const fail = (msg) => {
 let raw;
 if (tagIndex >= 0) {
   const tag = argv[tagIndex + 1];
-  if (!tag) fail("--from-tag 后面要跟 tag，例如 --from-tag v1.24.0-fork.20251120.1");
+  if (!tag) fail("--from-tag 后面要跟 tag，例如 --from-tag v1.24.0-fork.20261119.1");
   if (!tag.startsWith(config.tagPrefix)) {
     fail(`tag "${tag}" 必须以 "${config.tagPrefix}" 开头（electron-builder 生成的 tag 是 v<version>）`);
   }
@@ -61,7 +61,7 @@ const match = re.exec(raw);
 if (!match) {
   fail(
     `版本号 "${raw}" 不合法。必须是 <官方版本>-${id}.<YYYYMMDD>.<序号>，` +
-      `例如 1.24.0-${id}.20251120.1。\n` +
+      `例如 1.24.0-${id}.20261119.1。\n` +
       "  原因：GitHub provider 只接受**合法 semver** 的 tag（electron-updater/out/providers/GitHubProvider.js: " +
       "`if (!semver.valid(hrefTag)) continue;`），" +
       `且更新通道名取自预发布标识 "${id}"，缺了这个后缀自动更新会失效。`,

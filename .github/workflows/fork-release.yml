@@ -2,8 +2,8 @@ name: fork-release
 
 # 触发方式：
 #  1) 推一个 fork 版本 tag（推荐，用 bash fork/tools/release.sh 生成）：
-#       v1.24.0-fork.20251120.1
-#  2) 手动 workflow_dispatch，填 version（如 1.24.0-fork.20251120.1），
+#       v1.24.0-fork.20261119.1
+#  2) 手动 workflow_dispatch，填 version（如 1.24.0-fork.20261119.1），
 #     此时 tag 由 electron-builder 自己按 "v"+version 创建。
 #
 # 版本/tag 规则只认 <官方版本>-fork.<YYYYMMDD>.<序号>：
@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "fork 版本号，例如 1.24.0-fork.20251120.1"
+        description: "fork 版本号，例如 1.24.0-fork.20261119.1"
         required: true
 
 # 只用 Actions 自带的 GITHUB_TOKEN，不需要任何自定义 secret。

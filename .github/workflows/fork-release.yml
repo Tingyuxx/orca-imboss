@@ -1,0 +1,126 @@
+name: fork-release
+
+# 触发方式：
+#  1) 推一个 fork 版本 tag（推荐，用 bash fork/tools/release.sh 生成）：
+#       v1.24.0-fork.20251120.1
+#  2) 手动 workflow_dispatch，填 version（如 1.24.0-fork.20251120.1），
+#     此时 tag 由 electron-builder 自己按 "v"+version 创建。
+#
+# 版本/tag 规则只认 <官方版本>-fork.<YYYYMMDD>.<序号>：
+#   * 合法 semver —— electron-updater 的 GitHub provider 会跳过非法 semver 的 tag；
+#   * 预发布标识 fork —— 决定更新通道（fork.yml）并让 allowPrerelease 自动为 true；
+#   * 日期 + 序号 —— 严格单调递增（同一天发两次就是 .1 / .2）。
+on:
+  push:
+    tags:
+      - "v*-fork.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "fork 版本号，例如 1.24.0-fork.20251120.1"
+        required: true
+
+# 只用 Actions 自带的 GITHUB_TOKEN，不需要任何自定义 secret。
+permissions:
+  contents: write
+
+concurrency:
+  group: fork-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read fork.config.json
+        id: cfg
+        shell: bash
+        run: |
+          echo "node=$(node -p "require('./fork.config.json').ci.nodeVersion")" >> "$GITHUB_OUTPUT"
+          echo "pnpm=$(node -p "require('./fork.config.json').ci.pnpmVersion")" >> "$GITHUB_OUTPUT"
+          echo "artifact=$(node -p "require('./fork.config.json').artifactBaseName")" >> "$GITHUB_OUTPUT"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ steps.cfg.outputs.pnpm }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.cfg.outputs.node }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+            TAG="v${VERSION}"
+          else
+            TAG="${{ github.ref_name }}"
+            VERSION="${TAG#v}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "版本: $VERSION / tag: $TAG"
+
+      - name: Patch package.json version (never committed)
+        shell: bash
+        run: node fork/tools/set-version.mjs "${{ steps.ver.outputs.version }}" --strict-base
+
+      - name: Generate electron-builder config from fork.config.json
+        run: node fork/tools/gen-builder-config.mjs
+
+      - name: Fork scaffolding checks
+        shell: bash
+        run: |
+          UP_OWNER=$(node -p "require('./fork.config.json').upstream.owner")
+          UP_REPO=$(node -p "require('./fork.config.json').upstream.repo")
+          git remote add upstream "https://github.com/${UP_OWNER}/${UP_REPO}.git" || true
+          git fetch upstream --tags --prune || true
+          bash fork/tools/check-integration.sh
+
+      - name: Typecheck + build
+        run: pnpm build
+
+      - name: Package & publish (Windows)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm exec electron-builder --win --config .electron-builder.fork.gen.yml --publish always
+
+      - name: Attach release notes (upstream base)
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BASE_TAG=$(node -p "require('./fork/upstream-base.json').baseTag")
+          BASE_COMMIT=$(node -p "require('./fork/upstream-base.json').baseCommit")
+          UP_OWNER=$(node -p "require('./fork.config.json').upstream.owner")
+          UP_REPO=$(node -p "require('./fork.config.json').upstream.repo")
+          gh release edit "${{ steps.ver.outputs.tag }}" --repo "${{ github.repository }}" \
+            --title "imboss-fork ${{ steps.ver.outputs.version }}" \
+            --notes "Fork build based on upstream ${BASE_TAG} (\`${BASE_COMMIT:0:8}\`).
+          Upstream: https://github.com/${UP_OWNER}/${UP_REPO}/tree/${BASE_COMMIT}
+
+          版本号规则：<官方版本>-fork.<发布日>.<当日序号>，据此自动更新可从上一个 fork 版本升级。"
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.cfg.outputs.artifact }}-${{ steps.ver.outputs.version }}
+          path: |
+            dist/*.exe
+            dist/*.yml
+            dist/*.blockmap
+          if-no-files-found: error

@@ -1,0 +1,79 @@
+name: fork-ci
+
+# 本机没有 MSVC（pnpm dev / 打包跑不起来），所以 build 与 e2e 的门禁放在这里。
+on:
+  push:
+    branches:
+      - fork
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # 挂载面积检查要拿上游 tag 做基准，所以需要完整历史 + tag
+          fetch-depth: 0
+
+      - name: Read fork.config.json
+        id: cfg
+        shell: bash
+        run: |
+          echo "node=$(node -p "require('./fork.config.json').ci.nodeVersion")" >> "$GITHUB_OUTPUT"
+          echo "pnpm=$(node -p "require('./fork.config.json').ci.pnpmVersion")" >> "$GITHUB_OUTPUT"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ steps.cfg.outputs.pnpm }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.cfg.outputs.node }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Fetch upstream tags (baseline for the mount-footprint check)
+        shell: bash
+        run: |
+          UP_OWNER=$(node -p "require('./fork.config.json').upstream.owner")
+          UP_REPO=$(node -p "require('./fork.config.json').upstream.repo")
+          git remote add upstream "https://github.com/${UP_OWNER}/${UP_REPO}.git" || true
+          git fetch upstream --tags --prune || echo "::warning::upstream fetch 失败，跳过挂载面积检查"
+
+      - name: Fork scaffolding checks
+        shell: bash
+        run: bash fork/tools/check-integration.sh
+
+      - name: Typecheck + build
+        run: pnpm build
+
+      - name: e2e (Playwright)
+        # 上游 CI 从不跑 e2e；这套 fork 门禁首次跑通后把 continue-on-error 去掉
+        continue-on-error: true
+        run: |
+          node node_modules/electron/install.js
+          pnpm test:e2e:only
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: ignore

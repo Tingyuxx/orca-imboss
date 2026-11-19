@@ -266,6 +266,36 @@ Release id **451013608**。逐条核对结果：
    并跑 `fork/tools/check-update-logic.mjs --self-check`（用真实 `isUpdateAvailable` 验证可升级/不降级）。
    这三条以后每次发版都会自动跑，不用人工核对。
 
+### 11.1 第二次实测抓到的大坑：同一条 tag 被建出**两个** release
+
+`.4` 那轮发现 `Attach release notes` 一直 `HTTP 422 Release.tag_name already exists`，查下去才发现：
+
+```
+451023729 v1.24.0-fork.20261119.4  assets=3   ← exe + latest.yml + blockmap
+451023730 v1.24.0-fork.20261119.4  assets=1   ← 只有一个 blockmap
+```
+
+`electron-builder 26.17.0` 在 `--publish always` 下会为同一条 tag **并发**创建两个 release
+（日志里两行 `• publishing` 时间戳只差 0.1ms）。后果连坐三处：blockmap 被传到「兄弟」release 上（所以 `.1` 的
+blockmap 是 404）、`gh release edit` 永远 422、Release 页面出现两条同 tag 记录。
+
+**改法**：`--publish never` 只负责打包；发布改由 `gh release create/upload` 一次完成（`fork-release.yml`
+的 `Publish release` 步骤），可重入（release 已存在就 `--clobber` 补传）。
+
+`.5` 实测结果（Release 451030126，run 44483245642，2m42s）：
+
+| 检查项 | 结果 |
+| --- | --- |
+| release 数量 | ✅ 一条 tag 一条 release（不再有兄弟） |
+| 资产 | ✅ `latest.yml` + `.exe` + `.exe.blockmap` 全在同一 release，三个 URL 都是 HTTP 200 |
+| 标题/正文 | ✅ `name=imboss-fork 1.24.0-fork.20261119.5`，正文含上游 base tag + commit + 版本规则 |
+| pre-release 标记 | ✅ `prerelease=false`（版本字符串本身是预发布，但页面是正常 release） |
+| 更新判定（真实 `isUpdateAvailable`） | ✅ `.1 → .5` = true，`.4 → .5` = true，同版本 false，官方 `1.24.0` → fork = false（官方版不会自动变成 fork 版，需手动装一次） |
+| 整个 job 耗时 | 2m42s（此前 5m07s，因为省掉了 electron-builder 自己那套上传） |
+
+另外修了 `release.sh` 的序号计算：`git ls-remote --tags` 对 annotated tag 会多输出一行 `…^{}`
+（peeled），之前被当成「另一个 tag」计数，导致序号跳号（`.1` 之后直接 `.4`）。现在改为「取最大序号 + 1」。
+
 ## 12. 还没在真机上验证过的点（需要你本机点一下）
 
 1. 旧 fork 版 →「检查更新」→ 下载 → 安装 → about 里版本号变化（验证第 4 节的版本/通道结论闭环）。

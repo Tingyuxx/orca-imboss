@@ -40,17 +40,21 @@ DATE=$(date -u +%Y%m%d)
 # 当日序号：取「本地 + 远端」同 base 同日期 tag 里**最大的序号 + 1**（不是数个数）。
 # 注意 ls-remote 对 annotated tag 会多输出一行 "…^{}"（peeled），必须过滤，否则会跳号。
 PATTERN="${TAG_PREFIX}${BASE}-${PRERELEASE_ID}.${DATE}.*"
-max_seq() {  # 从标准输入里抓最后一节的数字，取最大
-  sed -n "s|.*${TAG_PREFIX}${BASE}-${PRERELEASE_ID}\.${DATE}\.\([0-9][0-9]*\)\$||p" | sort -n | tail -1
+# 抓「最后一节的数字」并取最大值；ls-remote 的每行取第 2 列后同样适用
+max_seq() {
+  awk '{ n=$NF; sub(/.*\./,"",n); if (n ~ /^[0-9]+$/ && n+0>m) m=n+0 } END { if (m>0) print m }'
 }
 LOCAL_MAX=$(git tag --list "$PATTERN" | max_seq)
-REMOTE_MAX=$(git ls-remote --tags origin "$PATTERN" 2>/tmp/fork-lsremote.err | grep -v '\^{}' | awk '{print $2}' | max_seq)
+# annotated tag 会多一行 peeled ref（…^{}），必须过滤，否则会跳号
+REMOTE_MAX=$(git ls-remote --tags origin "$PATTERN" 2>/tmp/fork-lsremote.err | grep -v "[^{]*\^{}" | awk '{print $2}' | max_seq)
 if [ -z "$REMOTE_MAX" ] && [ -s /tmp/fork-lsremote.err ]; then
   info "无法查询远端 tag（$(head -1 /tmp/fork-lsremote.err)），只按本地序号，注意别在多台机器上同时发"
 fi
-LAST=$(printf '%s
-%s
-' "${LOCAL_MAX:-0}" "${REMOTE_MAX:-0}" | sort -n | tail -1)
+if [ -n "$LOCAL_MAX" ] && [ -n "$REMOTE_MAX" ]; then
+  LAST=$(( LOCAL_MAX > REMOTE_MAX ? LOCAL_MAX : REMOTE_MAX ))
+else
+  LAST=${LOCAL_MAX:-${REMOTE_MAX:-0}}
+fi
 N=$((LAST + 1))
 TAG="${TAG_PREFIX}${BASE}-${PRERELEASE_ID}.${DATE}.${N}"
 

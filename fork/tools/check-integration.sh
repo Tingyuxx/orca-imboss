@@ -21,7 +21,9 @@ for f in fork.config.json electron-builder.fork.yml fork/upstream-base.json \
          src/main/ipc/fork.ts src/preload/fork.ts \
          fork/tools/gen-builder-config.mjs fork/tools/set-version.mjs \
          fork/tools/sync-upstream.sh fork/tools/release.sh \
-         fork/integration-points.md fork/RUNBOOK.md; do
+         fork/integration-points.md fork/RUNBOOK.md \
+         fork/WORKFLOW.md fork/CODING-STANDARDS.md fork/mount-claims.md \
+         fork/specs/README.md fork/e2e/playwright.fork.config.ts; do
   [ -f "$f" ] && ok "$f" || bad "缺失 $f"
 done
 
@@ -99,6 +101,51 @@ if grep -rnE "(ghp|gho|ghs|ghu|github_pat)_[A-Za-z0-9]{20,}" .github/workflows/ 
   bad "发现疑似硬编码 GitHub token"
 else
   ok "没有硬编码 token"
+fi
+
+echo "== 8. 挂载点台账（fork/mount-claims.md）=="
+CLAIMS=fork/mount-claims.md
+if [ ! -f "$CLAIMS" ]; then
+  bad "缺失 $CLAIMS"
+else
+  # 台账行 = 竖线围起来、第一列是 Mx。
+  # 列序固定：| 挂载点 | 上游文件 | ticket | owner | 状态 | 起 | 释 |
+  ROWS=$(grep -E '^\|[[:space:]]*M[0-9]' "$CLAIMS" || true)
+  if [ -z "$ROWS" ]; then
+    ok "台账为空（当前没有挂载点被占用）"
+  else
+    while IFS= read -r row; do
+      id=$(echo "$row"    | awk -F'|' '{print $2}' | tr -d ' 	')
+      tfile=$(echo "$row" | awk -F'|' '{print $3}' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+      who=$(echo "$row"   | awk -F'|' '{print $5}' | tr -d ' 	')
+      st=$(echo "$row"    | awk -F'|' '{print $6}' | tr -d ' 	')
+      started=$(echo "$row" | awk -F'|' '{print $7}' | tr -d ' 	')
+      released=$(echo "$row" | awk -F'|' '{print $8}' | tr -d ' 	')
+      case "$st" in
+        claimed)
+          [ -n "$started" ] && [ "$started" != "-" ] || bad "$id 是 claimed 但「起」列为空（应填日期）"
+          [ "$released" = "-" ] || bad "$id 是 claimed 但「释」列已填 $released（改回 released，或把「释」清成 -）"
+          grep -qE "^\|[[:space:]]*${id}[[:space:]]*\|" fork/integration-points.md             || bad "$id 是 claimed 但 fork/integration-points.md 里没登记这个挂载点"
+          echo "  · claimed: $id ($tfile) by ${who:-?}"
+          ;;
+        released)
+          [ -n "$released" ] && [ "$released" != "-" ] || bad "$id 是 released 但「释」列为空（应填释放日期）"
+          ;;
+        *)
+          bad "$id 的状态是「$st」，只能是 claimed 或 released"
+          ;;
+      esac
+    done < <(printf '%s
+' "$ROWS")
+    # 同一挂载点同一时刻只能有一行 claimed（WORKFLOW §4.2 规则 2）
+    DUP=$(printf '%s
+' "$ROWS"       | awk -F'|' '{id=$2; st=$6; gsub(/[ 	]/,"",id); gsub(/[ 	]/,"",st); if (st=="claimed") print id}'       | sort | uniq -d)
+    if [ -n "$DUP" ]; then
+      for d in $DUP; do bad "挂载点 $d 同时有两行 claimed（同一时刻只能一个 owner）"; done
+    else
+      ok "没有挂载点被两个 ticket 同时 claimed"
+    fi
+  fi
 fi
 
 echo

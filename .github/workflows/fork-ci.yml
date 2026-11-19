@@ -4,7 +4,8 @@ name: fork-ci
 #
 # 三个 job：
 #   verify      —— 快闸门（约 2 分钟）：typecheck + build + 骨架/挂载面积自检。每次 push 都跑。
-#   e2e-smoke   —— 7 个用例的冒烟子集，验证「真实 Electron 在 CI 里能起来并点得动」。
+#   e2e-smoke   —— 7 个用例的冒烟子集，验证「真实 Electron 在 CI 里能起来并点得动」；
+#                  同一 job 里再跑一遍 fork 自有 e2e（fork/e2e/*.spec.ts，参考信号、不阻断）。
 #   e2e-full    —— 95 个用例全量，只在每天定时 / 手动触发；单次实测超过 15 分钟。
 on:
   push:
@@ -109,10 +110,22 @@ jobs:
       - name: Build (e2e drives the real app out of out/)
         run: pnpm build
 
-      - name: e2e smoke subset
-        run: |
-          node node_modules/electron/install.js
-          pnpm test:e2e:only -- tests/e2e/smoke.spec.ts tests/e2e/navigation.spec.ts tests/e2e/settings.spec.ts tests/e2e/skills.spec.ts
+      - name: Install Electron binary
+        run: node node_modules/electron/install.js
+
+      - name: e2e smoke subset (upstream suite)
+        # 挑的是「应用能起来 + 侧栏能切 + 设置能开 + 技能列表能读」这类一旦坏就不可能正常
+        # 使用的路径；拿它当 push 门禁候选（先观察，绿了再去掉 continue-on-error）。
+        run: pnpm test:e2e:only -- tests/e2e/smoke.spec.ts tests/e2e/navigation.spec.ts tests/e2e/settings.spec.ts tests/e2e/skills.spec.ts
+
+      # fork 自有 e2e（fork/e2e/*.spec.ts，配置 fork/e2e/playwright.fork.config.ts）。
+      # 目前是**参考信号**：continue-on-error + 不阻断（等 Tess 的真用例进来再决定要不要变硬门禁）。
+      # if: always() —— 上游冒烟红了也照跑，否则 fork 自己的信号会被上游的红灯吞掉。
+      # 产物写 playwright-report-fork/ 与 test-results-fork/，与上游那份分开。
+      - name: e2e fork suite (reference signal, non-blocking)
+        if: always()
+        continue-on-error: true
+        run: pnpm exec playwright test --config fork/e2e/playwright.fork.config.ts
 
       - name: Upload Playwright report
         if: always()
@@ -122,6 +135,8 @@ jobs:
           path: |
             playwright-report
             test-results
+            playwright-report-fork
+            test-results-fork
           if-no-files-found: ignore
 
   # 全量 95 个用例：耗时以十分钟计，只在定时 / 手动触发，避免每次 push 都烧 25 分钟 runner。

@@ -20,8 +20,8 @@
 # `-fork.` 预发布标识会自动把通道当成 `fork`，先请求 `fork.yml`（404）再回退到
 # `latest.yml`。这个组合对「有没有预发布后缀」两种情况都能工作，容错更大；
 # 细节见 fork/RUNBOOK.md 第 4 节。
-appId: @@APP_ID@@
-productName: @@PRODUCT_NAME@@
+appId: "@@APP_ID@@"
+productName: "@@PRODUCT_NAME@@"
 directories:
   output: dist
   buildResources: build
@@ -38,14 +38,14 @@ asarUnpack:
   - resources/**
 win:
   icon: resources/icon.png
-  executableName: @@EXECUTABLE_NAME@@
+  executableName: "@@EXECUTABLE_NAME@@"
 nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
   allowElevation: true
   deleteAppDataOnUninstall: false
-  artifactName: @@ARTIFACT_BASE@@-${version}.${ext}
+  artifactName: "@@ARTIFACT_BASE@@-${version}.${ext}"
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
@@ -53,6 +53,6 @@ nsis:
 npmRebuild: false
 publish:
   provider: github
-  owner: @@PUBLISH_OWNER@@
-  repo: @@PUBLISH_REPO@@
+  owner: "@@PUBLISH_OWNER@@"
+  repo: "@@PUBLISH_REPO@@"
   releaseType: release

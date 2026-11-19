@@ -18,8 +18,7 @@ concurrency:
 jobs:
   verify:
     runs-on: windows-latest
-    # 95 个 e2e 用例 × 30s 超时上限 ≈ 最坏 55 分钟；不设上限会白烧 runner 配额。
-    timeout-minutes: 45
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -63,17 +62,50 @@ jobs:
       - name: Typecheck + build
         run: pnpm build
 
+  # e2e 单独一个 job，与 verify 并行：verify 2 分钟内就给出可用/不可用的结论，
+  # 不让 95 个 Playwright 用例（串行、每个 30s 超时上限）拖住整条流水线。
+  e2e:
+    runs-on: windows-latest
+    # 实测：单次运行超过 13 分钟仍未结束（run 44480057467）。先给 25 分钟上限，跑通后再冻结耗时。
+    timeout-minutes: 25
+    # 拿不到一次完整通过之前只作为「参考信号」：失败不上红叉，但报告会留存，
+    # 这样 fork 主干可以靠 verify 门禁保持可用，同时 e2e 的坑还能被看见。
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read fork.config.json
+        id: cfg
+        shell: bash
+        run: |
+          echo "node=$(node -p "require('./fork.config.json').ci.nodeVersion")" >> "$GITHUB_OUTPUT"
+          echo "pnpm=$(node -p "require('./fork.config.json').ci.pnpmVersion")" >> "$GITHUB_OUTPUT"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ steps.cfg.outputs.pnpm }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.cfg.outputs.node }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (e2e drives the real app out of out/)
+        run: pnpm build
+
       - name: e2e (Playwright)
-        # 实测（run 44480057467）：95 个用例串行跑，耗时显著长于上游注释里说的「一分钟」。
-        # 在拿到一次完整通过之前保持 continue-on-error，避免它挡住真正的门禁（typecheck+build+脚手架自检）。
-        continue-on-error: true
-        timeout-minutes: 35
         run: |
           node node_modules/electron/install.js
           pnpm test:e2e:only
 
       - name: Upload Playwright report
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report

@@ -131,7 +131,8 @@ bash fork/tools/release.sh --dry-run   # 只看会打什么 tag
 
 | workflow | 触发 | 干什么 |
 | --- | --- | --- |
-| `fork-ci.yml` | push 到 `fork`、PR、手动 | `pnpm install` → 抓官方 tag → `check-integration.sh` → `pnpm build`（含 typecheck）→ e2e |
+| `fork-ci.yml`（job `verify`，快闸门） | push 到 `fork`、PR、手动 | `pnpm install` → 抓官方 tag → `check-integration.sh` → `pnpm build`（含 typecheck），约 2 分钟 |
+| `fork-ci.yml`（job `e2e`，参考信号） | 同上，与 `verify` **并行** | 95 个 Playwright 用例串行跑（真实 Electron）；25 分钟上限，`continue-on-error`，失败也会留 Playwright 报告 artifact |
 | `fork-release.yml` | 推 `v*-fork.*` tag 或手动填 version | `set-version` → `gen-builder-config` → 自检 → `pnpm build` → `electron-builder --publish always` → 上传安装包 artifact |
 
 ### 6.1 必须知道：上游的 `release.yml` 在仓库里要**禁用**
@@ -151,7 +152,9 @@ gh workflow disable "Release" --repo Tingyuxx/orca-imboss   # 万一被重新启
 新的仓库 / 重新 fork 时必须重新做一次。
 
 - 凭据只用 `GITHUB_TOKEN`（workflow 里 `permissions: contents: write`），**不需要任何自定义 secret**，也不要把 token 写进文件。
-- e2e 是否作为真门禁：见第 12 节记录。
+- e2e 为什么单独一个 job 且暂时不挡合并：95 个用例串行、首次运行超过 13 分钟（run 44480057467）。
+  `verify` 已经覆盖 typecheck + build + 骨架自检，足够判断「这次改动有没有把 fork 弄坏」；
+  等 e2e 拿到一次完整通过、并把耗时摸清，再把 `e2e` job 的 `continue-on-error` 去掉（第 11 节有记录）。
 
 ## 7. 与官方版并存 / 数据目录（当前策略：**共用**）
 

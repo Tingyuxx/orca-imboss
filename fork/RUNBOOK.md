@@ -17,7 +17,16 @@ upstream  → https://github.com/sethyuan/orca-imboss.git   （只 fetch，不 p
 origin    → https://github.com/Tingyuxx/orca-imboss.git    （我们自己的仓）
 upstream-main  只读镜像，`git fetch upstream && git merge --ff-only upstream/main`
 fork           我们的主线：官方 tag 之上叠我们的提交（线性，rebase 维护）
+              ← 已是仓库默认分支，新克隆直接落在它上面
 sync/<tag>     同步时用的临时分支，出问题就丢
+```
+
+新机器 / 重装后恢复环境（3 步）：
+
+```bash
+git clone https://github.com/Tingyuxx/orca-imboss.git
+cd orca-imboss
+bash fork/tools/bootstrap.sh     # 补 upstream remote + 抓 27 个官方 tag + 开 rerere + 确认分支
 ```
 
 常用命令：
@@ -28,18 +37,19 @@ git log --oneline upstream/main -10      # 官方最近在改什么
 git diff --stat v1.24.0 fork -- src/     # 我们的改动有多大（应该很小）
 ```
 
-## 2. 本机能做什么（实测，Windows + 无 MSVC）
+## 2. 本机能做什么（Windows + 无 MSVC，本机实测）
 
 | 操作 | 状态 | 说明 |
 | --- | --- | --- |
 | `bash fork/tools/*.sh`、`node fork/tools/*.mjs` | ✅ | 只用 git + node 内建模块，任何机器都能跑 |
-| `pnpm typecheck` | ✅ | 见第 9 节「本机无 MSVC 的装法」 |
+| `pnpm install --ignore-scripts --frozen-lockfile` | ✅ | 约 17 秒，只装依赖不跑原生编译（见第 9 节） |
+| `pnpm typecheck` | ✅ | node/web/e2e 三份 tsconfig 全过 |
+| `pnpm build`（typecheck + electron-vite build） | ✅ | 产出 `out/main`、`out/preload`、`out/renderer`（约 6 MB），已验证 fork 代码进了产物（`out/main/index.js` 里有 `fork:info`） |
 | `pnpm dev` | ❌ | 需要 better-sqlite3 的 Electron ABI 二进制，必须 MSVC 现编 |
 | `pnpm test:e2e` | ❌ | 同上 + 需要 electron 二进制 |
-| `electron-builder --win`（打包） | ❌ | 需要原生模块重建 |
-| `pnpm build`（typecheck + electron-vite build） | 见 CI | 本机可尝试，正式门禁在 `fork-ci` workflow |
+| `electron-builder --win`（打包） | ❌ | 需要原生模块重建 → 交给 CI |
 
-**结论：本机负责写代码 + 静态检查，`dev`/`e2e`/打包交给 GitHub Actions（`windows-latest` 有 VS）。**
+**结论：本机可以写代码 + typecheck + build；`dev`/`e2e`/打包交给 GitHub Actions（`windows-latest` 自带 VS）。**
 
 ## 3. 跟上游同步（官方 2–3 天发一版，这是日常动作）
 

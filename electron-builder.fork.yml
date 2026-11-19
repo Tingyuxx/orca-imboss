@@ -1,0 +1,58 @@
+# imboss-fork 的打包配置**模板**（不是直接可用的配置）。
+#
+# 用法：
+#   node fork/tools/gen-builder-config.mjs          # 生成根目录 .electron-builder.fork.gen.yml
+#   pnpm exec electron-builder --win --config .electron-builder.fork.gen.yml
+#
+# 为什么是模板而不是最终文件：
+# - `@@…@@` 占位符的值全部来自 `fork.config.json`（owner/repo、产品名等唯一配置源），
+#   这样「老板的 GitHub owner/repo」只存在一个地方，改成最后一个文件就够；
+# - `publish` 指向**我们自己的仓**：electron-builder 会据此在安装包里写
+#   `resources/app-update.yml`，自动更新只会拉我们自己的 release。
+#   绝不能指回 `sethyuan/orca-imboss`（那样一更新就把 fork 覆盖成官方版）。
+#   启动时的自检见 `src/main/fork/index.ts`。
+#
+# 与上游 `electron-builder.yml` 的差异只有：appId / productName / executableName /
+# artifactName / publish 目标。其余字段刻意保持与上游一致，上游改了这里要手动跟
+# （`fork/tools/check-integration.sh` 会对比关键字段并提示）。
+#
+# 刻意不写 `channel`：不写时 electron-builder 产出 `latest.yml`；客户端因为版本带
+# `-fork.` 预发布标识会自动把通道当成 `fork`，先请求 `fork.yml`（404）再回退到
+# `latest.yml`。这个组合对「有没有预发布后缀」两种情况都能工作，容错更大；
+# 细节见 fork/RUNBOOK.md 第 4 节。
+appId: @@APP_ID@@
+productName: @@PRODUCT_NAME@@
+directories:
+  output: dist
+  buildResources: build
+files:
+  - "out/**"
+  - "resources/**"
+  - "!**/.DS_Store"
+  - "!**/node_modules/.cache/**"
+  - "!**/*.{ttf,woff}"
+asar: true
+asarUnpack:
+  - "**/*.{wasm,node,dll,dylib,so,so.*}"
+  - "**/*.wasm"
+  - resources/**
+win:
+  icon: resources/icon.png
+  executableName: @@EXECUTABLE_NAME@@
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: true
+  deleteAppDataOnUninstall: false
+  artifactName: @@ARTIFACT_BASE@@-${version}.${ext}
+  shortcutName: ${productName}
+  uninstallDisplayName: ${productName}
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+npmRebuild: false
+publish:
+  provider: github
+  owner: @@PUBLISH_OWNER@@
+  repo: @@PUBLISH_REPO@@
+  releaseType: release

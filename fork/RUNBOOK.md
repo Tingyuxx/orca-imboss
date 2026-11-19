@@ -137,17 +137,44 @@ bash fork/tools/release.sh --dry-run   # 只看会打什么 tag
 - 凭据只用 `GITHUB_TOKEN`（workflow 里 `permissions: contents: write`），**不需要任何自定义 secret**，也不要把 token 写进文件。
 - e2e 那步第一次跑通后，把 `continue-on-error: true` 删掉，之后 e2e 才是真门禁。
 
-## 7. 与官方版并存 / 数据目录
+## 7. 与官方版并存 / 数据目录（当前策略：**共用**）
 
-- `appId`/`productName`/可执行文件都改了（`com.orcastudio.imboss.fork` / `imboss-fork` / `orca-imboss-fork`），
-  可以和官方版同时装在一台机器上，互不覆盖。
-- **但两者共享同一个数据目录 `~/.imboss`**（`src/main/data-dir.ts` 的 `getDataRoot()`，可用 `IMBOSS_DATA_ROOT` 覆盖）。
-  也就是说：同一个数据库、同一份技能/MCP 配置。想让 fork 用独立数据：
-  ```powershell
-  $env:IMBOSS_DATA_ROOT="$env:USERPROFILE\.imboss-fork"; & "C:\Path\to\orcaimboss-fork.exe"
-  ```
-- fork 默认**不改数据库结构**。真要加表，只能加在 `src/main/fork/migrations.ts`（`fork_` 前缀 + `fork_migrations` 记账表），
-  **绝不能**动 `src/main/db/migrations.ts` 的 `user_version` —— 那会让官方版跳过它自己的迁移。
+### 7.1 共存
+`appId`/`productName`/可执行文件都改过（`com.orcastudio.imboss.fork` / `imboss-fork` / `orca-imboss-fork`），
+所以 fork 版和官方版可以同时装在一台机器，安装/卸载互不影响。
+
+### 7.2 数据目录：两者共用 `~/.imboss`（已定）
+
+事实依据：`src/main/data-dir.ts` 的 `getDataRoot()` 返回 `join(homedir(), ".imboss")`，
+**和产品名/appId 无关**。所以：
+
+- **fork 版读写的就是老板现有的那份数据** —— 员工、会话、设置、头像、已装技能、MCP 配置全部接得上，不用迁移。
+- 现有实际内容（同一个 hook 里定义的路径）：
+  | 路径 | 内容 |
+  | --- | --- |
+  | `~/.imboss/db/imboss.db` (WAL) | 全部业务数据 |
+  | `~/.imboss/agent/skills/` | 用户/AI 自己装的技能 |
+  | `~/.imboss/agent/mcp.json` | MCP server 配置 |
+  | `~/.imboss/agent/auth.json` (0600) | 模型provider 凭据 |
+  | `~/.imboss/agent/models.json` / `models-store.json` | 自定义模型 |
+  | `~/.imboss/agent/sessions/` | agent 会话文件 |
+  | `~/.imboss/agent/builtin-skills/` | 随代码分发的内置技能（会被覆盖，不要手改） |
+  | `~/.imboss/mini-apps/<id>/metadata.json` | Mini App |
+  | `~/.imboss/avatars/`、`attachments/`、`integrations/` | 头像、粘贴附件、IM 媒体 |
+- **如果官方版还留着**：它会看到**同一份数据**（同一个 DB、同一批技能/MCP）。两版同时开同一个 DB 属于 SQLite 多进程读写（WAL 能撑，但不建议同时发消息）。
+- **将来要卸官方版**：直接卸，数据不会丢（数据不在安装目录）。
+- **万一以后要隔离**：两个办法，优先级从高到低
+  1. 启动前设 `IMBOSS_DATA_ROOT`（每次调用都会读，不需要改代码）：
+     ```powershell
+     $env:IMBOSS_DATA_ROOT="$env:USERPROFILE\.imboss-fork"; & "C:\Path\to\orca-imboss-fork.exe"
+     ```
+     注意：`~/.agents/skills`（跨工具共享的只读技能目录）是 home 级的，**不会**跟着 `IMBOSS_DATA_ROOT` 走。
+  2. 真要默认就隔离，可以在 `src/main/fork/index.ts` 里调 `process.env["IMBOSS_DATA_ROOT"] ||= ...`（必须在任何 `getDataRoot()` 调用前，即 `initFork()` 位置要提到最早）——但这会**丢掉现有配置**接入，所以不是当前选择。
+
+### 7.3 DB 结构纪律（不变）
+fork 默认**不改数据库结构**（`FORK_MIGRATIONS = []`，迁移函数直接 return）。
+真要加表只能加在 `src/main/fork/migrations.ts`（`fork_` 前缀 + `fork_migrations` 记账表），
+**绝不能**动 `src/main/db/migrations.ts` 的 `user_version` —— 那会让官方版跳过它自己的迁移。
 
 ## 8. 冒烟清单（每次同步 / 每次发版后，5 分钟）
 

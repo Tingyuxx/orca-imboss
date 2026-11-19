@@ -37,20 +37,25 @@ BASE_COMMIT=$(node -e 'process.stdout.write(require("./fork/upstream-base.json")
 BASE_COMMIT=${BASE_COMMIT:-$(git rev-parse "v${BASE}" 2>/dev/null || echo unknown)}
 DATE=$(date -u +%Y%m%d)
 
-# 当日序号：本地 + 远端已有的同 base 同日期 tag 都算上（换机器也不会撞号）
-LOCAL_COUNT=$(git tag --list "${TAG_PREFIX}${BASE}-${PRERELEASE_ID}.${DATE}.*" | wc -l | tr -d ' ')
-REMOTE_TAGS=$(git ls-remote --tags origin "${TAG_PREFIX}${BASE}-${PRERELEASE_ID}.${DATE}.*" 2>/tmp/fork-lsremote.err)
-if [ $? -ne 0 ]; then
-  info "无法查询远端 tag（$(head -1 /tmp/fork-lsremote.err 2>/dev/null)），只按本地计数（$LOCAL_COUNT），注意别在多台机器上同时发"
-  REMOTE_TAGS=0
-else
-  REMOTE_TAGS=$(printf '%s' "$REMOTE_TAGS" | grep -c . || true)
+# 当日序号：取「本地 + 远端」同 base 同日期 tag 里**最大的序号 + 1**（不是数个数）。
+# 注意 ls-remote 对 annotated tag 会多输出一行 "…^{}"（peeled），必须过滤，否则会跳号。
+PATTERN="${TAG_PREFIX}${BASE}-${PRERELEASE_ID}.${DATE}.*"
+max_seq() {  # 从标准输入里抓最后一节的数字，取最大
+  sed -n "s|.*${TAG_PREFIX}${BASE}-${PRERELEASE_ID}\.${DATE}\.\([0-9][0-9]*\)\$||p" | sort -n | tail -1
+}
+LOCAL_MAX=$(git tag --list "$PATTERN" | max_seq)
+REMOTE_MAX=$(git ls-remote --tags origin "$PATTERN" 2>/tmp/fork-lsremote.err | grep -v '\^{}' | awk '{print $2}' | max_seq)
+if [ -z "$REMOTE_MAX" ] && [ -s /tmp/fork-lsremote.err ]; then
+  info "无法查询远端 tag（$(head -1 /tmp/fork-lsremote.err)），只按本地序号，注意别在多台机器上同时发"
 fi
-N=$((LOCAL_COUNT + REMOTE_TAGS + 1))
+LAST=$(printf '%s
+%s
+' "${LOCAL_MAX:-0}" "${REMOTE_MAX:-0}" | sort -n | tail -1)
+N=$((LAST + 1))
 TAG="${TAG_PREFIX}${BASE}-${PRERELEASE_ID}.${DATE}.${N}"
 
 info "官方基线：${BASE} (${BASE_COMMIT:0:8})"
-info "本次 tag：${TAG}（本地同日期已有 ${LOCAL_COUNT} 个，远端 ${REMOTE_TAGS} 个）"
+info "本次 tag：${TAG}（本地最大序号 ${LOCAL_MAX:-无}，远端最大序号 ${REMOTE_MAX:-无}）"
 
 node fork/tools/set-version.mjs --from-tag "$TAG" --strict-base --check || fail "版本号校验失败"
 node fork/tools/gen-builder-config.mjs --check || fail "打包配置校验失败"

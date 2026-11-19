@@ -81,6 +81,14 @@ bash fork/tools/release.sh --dry-run   # 只看会打什么 tag
 `set-version → gen-builder-config → check-integration → pnpm build → electron-builder --publish always`，
 产物传到本仓 Release，用户的自动更新从那里拉。
 
+发布后 CI 还会自己做两道确认（不需要人盯着）：
+
+1. **补传 `.blockmap`**：electron-builder 有时只在日志里打印 `uploading …blockmap`，release 上其实没有（实测 404）。
+   缺它不影响能不能更新，但会让每次更新退化成完整 142MB 下载，所以 workflow 里显式 `gh release upload --clobber`。
+2. **校验发布物**：下载 release 上的 `latest.yml`，断言 `version` = tag 版本，再用
+   `fork/tools/check-update-logic.mjs --self-check` 跑**真实的 `isUpdateAvailable`**：
+   前一日版本可升级、同版本不升级、后一日版本不降级。本地想复现就下载那个 yml 再跑同一条命令。
+
 **版本号 / tag 规则（唯一一套，脚本和 CI 都按这个来）**
 
 | 项 | 格式 | 例 |

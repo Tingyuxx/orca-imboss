@@ -17,6 +17,12 @@ info() { printf '\033[36m→\033[0m %s\n' "$1"; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; }
 fail() { printf '\033[31m✗\033[0m %s\n' "$1"; exit 1; }
 
+# 新克隆默认落在 main（= 官方镜像），此时还没有 fork.config.json：先切到 fork 分支。
+if [ ! -f fork.config.json ]; then
+  info "当前分支没有 fork.config.json（默认落在官方镜像分支），先切到 fork"
+  git switch fork || fail "切不到 fork 分支，检查 origin 是否指向 ${OWNER:-fork 自己的仓}"
+fi
+
 OWNER=$(node -e 'process.stdout.write(require("./fork.config.json").owner)')
 REPO=$(node -e 'process.stdout.write(require("./fork.config.json").repo)')
 UP_OWNER=$(node -e 'process.stdout.write(require("./fork.config.json").upstream.owner)')

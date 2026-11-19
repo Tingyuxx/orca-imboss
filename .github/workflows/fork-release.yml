@@ -93,26 +93,51 @@ jobs:
       - name: Typecheck + build
         run: pnpm build
 
-      - name: Package & publish (Windows)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm exec electron-builder --win --config .electron-builder.fork.gen.yml --publish always
+      - name: Package (no publisher)
+        # 刻意用 --publish never：electron-builder 26.17.0 在 --publish always 下会为同一条 tag
+        # 并发创建**两个** release（实测 .1/.4 各出现一个「兄弟」 release，blockmap 被传到了另一个上，
+        # 于是 PATCH 改标题/正文永远 422 tag_name already exists）。发布动作改由下面的
+        # 「Publish release」步骤用 gh 一次性完成，可重入、可复现。
+        run: pnpm exec electron-builder --win --config .electron-builder.fork.gen.yml --publish never
 
-      - name: Make sure the delta (.blockmap) asset is attached
-        # 实测：electron-builder 6.8.9 会打印 "uploading ...blockmap" 但 release 上是 404（只有 exe 与 yml）。
-        # 缺 blockmap 不影响使用，但每次更新会退化成完整 149MB 下载，所以这里显式补上。
+      - name: Publish release (single, deterministic)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          shopt -s nullglob
-          FILES=(dist/*.blockmap)
-          if [ ${#FILES[@]} -eq 0 ]; then
-            echo "::warning::dist/ 里没有 blockmap，本次只能全量下载更新"
-            exit 0
+          TAG="${{ steps.ver.outputs.tag }}"
+          VERSION="${{ steps.ver.outputs.version }}"
+          ART="${{ steps.cfg.outputs.artifact }}"
+          BASE_TAG=$(node -p "require('./fork/upstream-base.json').baseTag")
+          BASE_COMMIT=$(node -p "require('./fork/upstream-base.json').baseCommit")
+          UP_OWNER=$(node -p "require('./fork.config.json').upstream.owner")
+          UP_REPO=$(node -p "require('./fork.config.json').upstream.repo")
+
+          INSTALLER="dist/${ART}-${VERSION}.exe"
+          BLOCKMAP="${INSTALLER}.blockmap"
+          LATEST="dist/latest.yml"
+          for f in "$INSTALLER" "$LATEST"; do
+            [ -f "$f" ] || { echo "::error::缺少发布产物 $f"; exit 1; }
+          done
+          FILES=("$INSTALLER" "$LATEST")
+          [ -f "$BLOCKMAP" ] && FILES+=("$BLOCKMAP") || echo "::warning::没有 blockmap，本次更新只能全量下载"
+
+          NOTES="Fork build based on upstream ${BASE_TAG} (\`${BASE_COMMIT:0:8}\`).
+          Upstream: https://github.com/${UP_OWNER}/${UP_REPO}/tree/${BASE_COMMIT}
+
+          版本号规则：<官方版本>-fork.<发布日>.<当日序号>，据此自动更新可从上一个 fork 版本升级。
+          安装包未签名，首次安装时 Windows SmartScreen 会提示一次。"
+
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "release 已存在，改为补传资产（可重入）"
+            gh release edit "$TAG" --repo "${{ github.repository }}" --title "imboss-fork ${VERSION}"
+            gh release upload "$TAG" "${FILES[@]}" --clobber --repo "${{ github.repository }}"
+          else
+            gh release create "$TAG" "${FILES[@]}" --repo "${{ github.repository }}"               --verify-tag --title "imboss-fork ${VERSION}" --notes "$NOTES"
           fi
-          gh release upload "${{ steps.ver.outputs.tag }}" "${FILES[@]}" --clobber --repo "${{ github.repository }}"
-          gh release view "${{ steps.ver.outputs.tag }}" --repo "${{ github.repository }}" --json assets -q '.assets[].name' | sed 's/^/  asset: /'
+          # 正文单独再 PATCH 一次：create 时带 notes 在部分 gh 版本上会被忽略
+          gh release edit "$TAG" --repo "${{ github.repository }}" --notes "$NOTES"
+          gh release view "$TAG" --repo "${{ github.repository }}" --json name,body,assets             -q '"name=\(.name)  assets=" + (.assets | map(.name) | join(", ")) + "  body=" + (.body | length | tostring) + " chars"'
 
       - name: Verify published update metadata
         # 门禁：latest.yml 里的 version 必须等于 tag 版本，且更新器判定逻辑自洽（可升级/不降级）。
@@ -126,36 +151,6 @@ jobs:
             --latest-yml .verify/latest.yml \
             --expect-version "${{ steps.ver.outputs.version }}" \
             --self-check
-
-      - name: Attach release notes (upstream base)
-        continue-on-error: true
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # electron-builder 刚创建完 release，立刻 edit 会撞 422（Release.tag_name already exists），
-          # 所以先等它可见，再重试几次。
-          TAG="${{ steps.ver.outputs.tag }}"
-          for i in 1 2 3 4 5; do
-            if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then break; fi
-            echo "release 还不可见，$i/5，等 5s"; sleep 5
-          done
-          BASE_TAG=$(node -p "require('./fork/upstream-base.json').baseTag")
-          BASE_COMMIT=$(node -p "require('./fork/upstream-base.json').baseCommit")
-          UP_OWNER=$(node -p "require('./fork.config.json').upstream.owner")
-          UP_REPO=$(node -p "require('./fork.config.json').upstream.repo")
-          NOTES="Fork build based on upstream ${BASE_TAG} (\`${BASE_COMMIT:0:8}\`).
-          Upstream: https://github.com/${UP_OWNER}/${UP_REPO}/tree/${BASE_COMMIT}
-
-          版本号规则：<官方版本>-fork.<发布日>.<当日序号>，据此自动更新可从上一个 fork 版本升级。"
-          for i in 1 2 3 4 5; do
-            if gh release edit "$TAG" --repo "${{ github.repository }}" \
-                 --title "imboss-fork ${{ steps.ver.outputs.version }}" --notes "$NOTES"; then
-              echo "✓ 发布说明已写入"; exit 0
-            fi
-            echo "edit 失败，$i/5，等 5s 重试"; sleep 5
-          done
-          exit 1
 
       - name: Upload installers
         uses: actions/upload-artifact@v4

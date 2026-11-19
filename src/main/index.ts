@@ -48,6 +48,8 @@ import {
 import { startRemoteShell } from "./remote/shell";
 import { initTheme } from "./theme";
 import { initUpdater } from "./updater";
+// FORK-MOUNT:M9 — fork 的启动自检（校验自动更新源指向自己）
+import { initFork } from "./fork";
 import {
   initWindowShortcut,
   unregisterWindowShortcut,
@@ -258,6 +260,8 @@ app.whenReady().then(() => {
   // Always initialize the updater: the automatic startup check is packaged-only
   // (inside `initUpdater`), but the renderer's manual check also works in dev.
   initUpdater();
+
+  initFork(); // FORK-MOUNT:M9
 });
 
 async function purgeDisabledEmployeesOnStartup(): Promise<void> {

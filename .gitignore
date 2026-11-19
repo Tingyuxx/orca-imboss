@@ -13,3 +13,6 @@ test-results
 playwright-report
 tsconfig.e2e.tsbuildinfo
 docs/
+
+# fork: 由 fork/tools/gen-builder-config.mjs 生成的打包配置（不入库）
+.electron-builder.fork.gen.yml

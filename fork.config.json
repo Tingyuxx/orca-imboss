@@ -1,0 +1,19 @@
+{
+  "owner": "Tingyuxx",
+  "repo": "orca-imboss",
+  "appId": "com.orcastudio.imboss.fork",
+  "productName": "imboss-fork",
+  "executableName": "orca-imboss-fork",
+  "artifactBaseName": "orca-imboss-fork",
+  "tagPrefix": "v",
+  "prereleaseId": "fork",
+  "forkBranch": "fork",
+  "upstream": {
+    "owner": "sethyuan",
+    "repo": "orca-imboss"
+  },
+  "ci": {
+    "nodeVersion": "24",
+    "pnpmVersion": "11.2.2"
+  }
+}

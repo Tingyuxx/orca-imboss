@@ -2,10 +2,12 @@ import { DEFAULT_LOCALE } from "@shared/constants/locales";
 import { SettingKeys } from "@shared/constants/settings";
 import { setupL10N } from "@shared/l10n";
 import zhCN from "@shared/translations/zhCN.json";
+// FORK-MOUNT:M5 — fork 的中文词条单独放，zhCN.json（上游最高频改动的文件）一个字不碰
+import forkZhCN from "@shared/fork/translations/zhCN.json";
 import { getAppInfo } from "./platform";
 import { getShellSetting } from "./settings-shell";
 
-const TRANSLATIONS = { "zh-CN": zhCN };
+const TRANSLATIONS = { "zh-CN": { ...zhCN, ...forkZhCN } }; // FORK-MOUNT:M5
 
 /**
  * Resolved UI locale.

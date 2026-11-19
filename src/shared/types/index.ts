@@ -20,3 +20,5 @@ export * from "./spend";
 export * from "./themes";
 export * from "./updater";
 export * from "./work_status";
+// FORK-MOUNT:M6 — fork 的类型统一从 src/shared/fork/types.ts 导出
+export * from "../fork/types";

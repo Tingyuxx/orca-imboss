@@ -53,6 +53,8 @@ import type {
   WorkStatusChangedPayload,
 } from "@shared/types";
 import { contextBridge, ipcRenderer, webUtils } from "electron";
+// FORK-MOUNT:M2 — fork 的 API 全部在 ./fork.ts 内，api 对象里只挂一行
+import { forkApi } from "./fork";
 
 const initialLocale = readArg("locale") ?? DEFAULT_LOCALE;
 
@@ -829,6 +831,9 @@ const api = {
     onChanged: (cb: (payload: WorkStatusChangedPayload) => void) =>
       on<WorkStatusChangedPayload>("workStatus:changed", cb),
   },
+
+  // FORK-MOUNT:M2 — 渲染层通过 window.imb.fork.* 访问，具体实现见 src/preload/fork.ts
+  fork: forkApi,
 };
 
 contextBridge.exposeInMainWorld("imb", api);

@@ -23,6 +23,8 @@ import { registerTagHandlers } from "./tag";
 import { registerThemeHandlers } from "./theme";
 import { registerWorkdirHandlers } from "./workdir";
 import { registerWorkStatusHandlers } from "./work_status";
+// FORK-MOUNT:M1 — fork 自有 handler 全部在 ./fork.ts 内，这里只挂一行
+import { registerForkHandlers } from "./fork";
 
 /**
  * Every channel that reads or writes the data folder, runs agents, talks to
@@ -62,4 +64,5 @@ export function registerRemoteHandlers(bind: Binder): void {
   registerSessionHandlers(bind);
   registerIntegrationHandlers(bind);
   registerBackupHandlers(bind);
+  registerForkHandlers(bind); // FORK-MOUNT:M1
 }

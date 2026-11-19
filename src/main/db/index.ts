@@ -1,5 +1,7 @@
 import DB from "better-sqlite3";
 import { ensureDataDir, getDbPath } from "../data-dir";
+// FORK-MOUNT:M8 — fork 自己的迁移记账（独立表），不碰上游的 user_version
+import { applyForkMigrations } from "../fork/migrations";
 import { migrate } from "./migrations";
 
 let _db: DB.Database | null = null;
@@ -16,6 +18,7 @@ export function initDatabase(): DB.Database {
   // Enforce declared foreign keys (required for ON DELETE CASCADE behavior).
   _db.pragma("foreign_keys = ON");
   migrate(_db);
+  applyForkMigrations(_db); // FORK-MOUNT:M8
   return _db;
 }
 

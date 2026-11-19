@@ -1,0 +1,6 @@
+{
+  "baseTag": "v1.24.0",
+  "baseCommit": "3aa87fe6be32a00f761ff990b18dde58fe0da000",
+  "syncedAt": "2026-11-19T07:19:49Z",
+  "note": "由 sync-upstream.sh --finalize 维护：记录本 fork 上次 rebase 到的上游 tag/commit"
+}

@@ -47,6 +47,7 @@
 
 | 文件 | 原因 | 替代做法 |
 | --- | --- | --- |
+| **`.github/workflows/release.yml`（上游发布流程）** | 它的触发条件是 `push tag v*`，我们的 fork tag 也匹配 `v*` → 会在本仓跑一遍**官方配置**的构建，并把官方 branded 产物发到我们的 Release（已实测复现，见 RUNBOOK 第 6 节） | **不改文件**，而是在仓库设置里把它**禁用**：`gh workflow disable "Release" --repo Tingyuxx/orca-imboss`（当前状态 `disabled_manually`，禁用状态跟文件路径绑定，上游改了也保持禁用）|
 | `src/shared/translations/zhCN.json` | 上游最高频改动（103 次），冲突王 | 词条写到 `src/shared/fork/translations/zhCN.json`，M5 处合并；fork 键优先 |
 | `src/main/db/migrations.ts` + `PRAGMA user_version` | fork 追加会导致**官方版跳过它自己的迁移** | `src/main/fork/migrations.ts` 独立表 `fork_migrations`，表名 `fork_` 前缀 |
 | `electron-builder.yml` | 上游发布配置 | `electron-builder.fork.yml`（模板）+ `fork/tools/gen-builder-config.mjs` |

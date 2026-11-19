@@ -18,6 +18,8 @@ concurrency:
 jobs:
   verify:
     runs-on: windows-latest
+    # 95 个 e2e 用例 × 30s 超时上限 ≈ 最坏 55 分钟；不设上限会白烧 runner 配额。
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,8 +64,10 @@ jobs:
         run: pnpm build
 
       - name: e2e (Playwright)
-        # 上游 CI 从不跑 e2e；这套 fork 门禁首次跑通后把 continue-on-error 去掉
+        # 实测（run 44480057467）：95 个用例串行跑，耗时显著长于上游注释里说的「一分钟」。
+        # 在拿到一次完整通过之前保持 continue-on-error，避免它挡住真正的门禁（typecheck+build+脚手架自检）。
         continue-on-error: true
+        timeout-minutes: 35
         run: |
           node node_modules/electron/install.js
           pnpm test:e2e:only

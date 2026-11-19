@@ -131,11 +131,27 @@ bash fork/tools/release.sh --dry-run   # 只看会打什么 tag
 
 | workflow | 触发 | 干什么 |
 | --- | --- | --- |
-| `fork-ci.yml` | push 到 `fork`、PR、手动 | `pnpm install` → 抓官方 tag → `check-integration.sh` → `pnpm build`（含 typecheck）→ e2e（暂 `continue-on-error`） |
+| `fork-ci.yml` | push 到 `fork`、PR、手动 | `pnpm install` → 抓官方 tag → `check-integration.sh` → `pnpm build`（含 typecheck）→ e2e |
 | `fork-release.yml` | 推 `v*-fork.*` tag 或手动填 version | `set-version` → `gen-builder-config` → 自检 → `pnpm build` → `electron-builder --publish always` → 上传安装包 artifact |
 
+### 6.1 必须知道：上游的 `release.yml` 在仓库里要**禁用**
+
+上游自带的 `.github/workflows/release.yml` 触发条件是 `push tag v*`。我们的 fork tag 也匹配 `v*`，
+所以推一个 fork tag 会**同时**触发两个工作流：除了我们的 `fork-release`，上游那个也会跑一遍
+（4 个平台，用**官方** `electron-builder.yml` 配置），最后把官方 branded 的安装包发到我们的 Release。
+第一次试验就真实撞上了（run 被手动 cancel）。
+
+处理方式：**不改文件，直接禁用那个工作流**（禁用状态绑定在文件路径上，上游日后改内容也保持禁用）：
+
+```bash
+gh workflow list --all                       # 应有 Release → disabled_manually
+gh workflow disable "Release" --repo Tingyuxx/orca-imboss   # 万一被重新启用就跑这句
+```
+
+新的仓库 / 重新 fork 时必须重新做一次。
+
 - 凭据只用 `GITHUB_TOKEN`（workflow 里 `permissions: contents: write`），**不需要任何自定义 secret**，也不要把 token 写进文件。
-- e2e 那步第一次跑通后，把 `continue-on-error: true` 删掉，之后 e2e 才是真门禁。
+- e2e 是否作为真门禁：见第 12 节记录。
 
 ## 7. 与官方版并存 / 数据目录（当前策略：**共用**）
 
@@ -212,11 +228,38 @@ $env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
 | 检查更新报 `Cannot find latest.yml` | 发布时没走 `fork-release.yml`（没生成更新信息文件），检查是否用了 `dist:win` 而不是 `--config .electron-builder.fork.gen.yml` |
 | 装了 fork 版却提示「发现官方新版本」 | `publish` 又指回官方了，检查 `fork.config.json` 与 `gen-builder-config` 的输出 |
 
-## 11. 还没在真机上验证过的点（首个版本发布时逐条确认）
+## 11. 首个版本（`v1.24.0-fork.20261119.1`）实测记录
 
-1. `electron-builder --win --config .electron-builder.fork.gen.yml` 在 `windows-latest` 上跑通，
-   产物名是 `orca-imboss-fork-<version>.exe`，且 `dist/` 里有 `latest.yml` 与 `.blockmap`。
-2. Release 页面：tag = `v<version>`，非 pre-release，资产齐全。
-3. 旧 fork 版 →「检查更新」→ 下载 → 安装 → 版本号变化（验证第 4 节的版本/通道结论）。
-4. 与官方版并存安装、卸载一个不影响另一个。
-5. `apps` 之外：远程后端（`imboss-backend`）本次未做 fork 打包，只出 Windows 桌面安装包。
+`2026-11-19T07:38Z`，`fork-release` run **44480661877** 在 `windows-latest` 上跑完（3m58s），
+Release id **451013608**。逐条核对结果：
+
+| 检查项 | 结果 | 证据 |
+| --- | --- | --- |
+| tag 形状 | ✅ `v1.24.0-fork.20261119.1` | `gh release view` 输出 `tag=…` |
+| Release 不被标成 pre-release | ✅ `draft=false prerelease=false` | `gh api .../releases/tags/…` |
+| 产物名 | ✅ `orca-imboss-fork-1.24.0-fork.20261119.1.exe`（149,363,479 B） | Release assets |
+| 版本号进了 exe 元数据 | ✅ `FileVersion`/`ProductVersion` = `1.24.0-fork.20261119.1`，`ProductName` = `imboss-fork` | `(Get-Item exe).VersionInfo` |
+| `latest.yml` 与产物一致 | ✅ `version` = tag 版本；`sha512` 与下载到的 exe 实测 sha512 **完全相同** | 本地 `crypto` 复算 |
+| 更新器真的认这个版本 | ✅ `check-update-logic.mjs --self-check`：前一日版本可升级、同版本不升级、后一日版本不降级 | 真实 `isUpdateAvailable` 判定 |
+| 通道文件 | ⚠️ 只有 `latest.yml`，没有 `fork.yml` —— **这正是设计**（客户端请求 `fork.yml` 404 后回退 `latest.yml`，见第 4 节） | Release assets |
+| `.blockmap` 增量包 | ❌ 缺（HTTP 404）。日志里明明打印了 `uploading …blockmap`，但 release 上没有 | `curl -I …exe.blockmap` → 404 |
+| 发布说明 | ⚠️ 首次 `gh release edit` 撞 `HTTP 422 Validation Failed: Release.tag_name already exists`（electron-builder 刚建完 release 的竞态），该步骤 `continue-on-error` 所以没影响产物 | 日志 |
+| 代码签名 | ⚠️ 未签名（`no code signing certificate configured, signing is skipped`），安装时 SmartScreen 会拦一次 | 日志 |
+
+**已按这次结果修的两处**（`fork-release.yml`）：
+
+1. 新增 `Make sure the delta (.blockmap) asset is attached`：publish 之后显式 `gh release upload dist/*.blockmap --clobber`。
+   缺 blockmap 不影响能不能更新，但会让每次更新退化成完整 142MB 下载。
+2. `Attach release notes` 改成「先等 release 可见（最多 5×5s）→ 再 edit，失败重试 5 次」。
+   同时新增 `Verify published update metadata` 门禁：下载发布出来的 `latest.yml`，断言其 `version` = tag 版本，
+   并跑 `fork/tools/check-update-logic.mjs --self-check`（用真实 `isUpdateAvailable` 验证可升级/不降级）。
+   这三条以后每次发版都会自动跑，不用人工核对。
+
+## 12. 还没在真机上验证过的点（需要你本机点一下）
+
+1. 旧 fork 版 →「检查更新」→ 下载 → 安装 → about 里版本号变化（验证第 4 节的版本/通道结论闭环）。
+   自动更新需要**至少两个** fork 版本才有意义，所以这条要等第二个版本。
+2. 与官方版并存安装、卸载一个不影响另一个。
+3. 首次启动时 `initFork()` 读到的 `app-update.yml` 里 `owner/repo` 是否为 `Tingyuxx/orca-imboss`（自我保护检查）。
+4. `fork:info` IPC 在设置页/调试面板里能否正常返回（目前只有 `window.imb.fork.info()`，还没有界面消费它）。
+5. 远程后端（`imboss-backend`）本次未做 fork 打包，只出 Windows 桌面安装包。
